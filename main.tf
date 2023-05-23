@@ -39,7 +39,7 @@ resource "aws_ec2_transit_gateway_vpc_attachment" "tgw_vpc_attachment" {
     }
 }
 
-resource "aws_route_table" "route_table" {
+resource "aws_route_table" "route_table_subnets" {
     count = var.vpc_count
     vpc_id = aws_vpc.main[count.index].id
 
@@ -51,4 +51,66 @@ resource "aws_route_table" "route_table" {
     tags = {
         Name = "rt-${count.index}"
     }
+}
+
+resource "aws_route_table_association" "route_table_association_subnets" { 
+    count = length(aws_subnet.subnet)
+    subnet_id = element(aws_subnet.subnet.*.id, count.index)
+    route_table_id = element(aws_route_table.route_table_subnets.*.id, floor(count.index / length(var.azs)))
+}
+#---  FLOW LOGS ---
+resource "aws_flow_log" "vpc_flow_log" {
+  count         = var.vpc_count
+  traffic_type  = "ALL"
+  log_destination = aws_cloudwatch_log_group.flow_log_group.arn
+  vpc_id   = aws_vpc.main[count.index].id
+  iam_role_arn  = aws_iam_role.flow_log_role.arn
+}
+
+resource "aws_cloudwatch_log_group" "flow_log_group" {
+  name              = "/aws/vpc/flow-log"
+  retention_in_days = 30
+}
+
+resource "aws_iam_role" "flow_log_role" {
+  name               = "flow-log-role"
+  assume_role_policy = jsonencode({
+    Version   : "2012-10-17",
+    Statement : [
+      {
+        Action : "sts:AssumeRole",
+        Effect : "Allow",
+        Principal : {
+          Service : [
+            "vpc-flow-logs.amazonaws.com"
+          ]
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "flow_log_policy_attachment" {
+  policy_arn   = aws_iam_policy.flow_log_policy.arn
+  role         = aws_iam_role.flow_log_role.name
+}
+
+resource "aws_iam_policy" "flow_log_policy" {
+  name   = "flow-log-policy"
+  policy = jsonencode({
+    Version   : "2012-10-17",
+    Statement : [
+      {
+        Action : [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents",
+          "logs:DescribeLogGroups",
+          "logs:DescribeLogStreams"
+        ],
+        Effect   : "Allow",
+        Resource : "*"
+      }
+    ]
+  })
 }
