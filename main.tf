@@ -114,3 +114,56 @@ resource "aws_iam_policy" "flow_log_policy" {
     ]
   })
 }
+
+#---SECURITY VPC---
+resource "aws_vpc" "security_vpc" {
+  cidr_block = "172.16.0.0/24"
+
+  tags = {
+    Name = "security-vpc"
+  }
+}
+
+resource "aws_subnet" "security_subnet" {
+  vpc_id = aws_vpc.security_vpc.id
+  cidr_block = "172.16.0.0/28"
+  tags = {
+    Name = "security-subnet"
+  }
+}
+
+resource "aws_internet_gateway" "security_igw" {
+  vpc_id = aws_vpc.security_vpc.id
+  tags = {
+    Name = "security-igw"
+  }
+}
+
+resource "aws_ec2_transit_gateway_vpc_attachment" "security_tgw_vpc_attachment" {
+  transit_gateway_id = aws_ec2_transit_gateway.transit_gateway.id
+  vpc_id = aws_vpc.security_vpc.id
+  subnet_ids = [aws_subnet.security_subnet.id]
+}
+
+resource "aws_route_table" "security_rt" {
+  vpc_id = aws_vpc.security_vpc.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.security_igw.id
+  }
+
+  route {
+    cidr_block = "10.0.0.0/16"
+    transit_gateway_id = aws_ec2_transit_gateway.transit_gateway.id
+  }
+
+  tags = {
+    Name = "security-rt"
+  }
+}
+
+resource "aws_route_table_association" "security_rt_association" {
+  subnet_id = aws_subnet.security_subnet.id
+  route_table_id = aws_route_table.security_rt.id
+}
